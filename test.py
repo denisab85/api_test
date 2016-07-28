@@ -26,6 +26,14 @@ WINDOWS_GUID_RX = "\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12
 SWIFTTEST_PROJECT_FILE_RX = '.*\.swift_test$'
 PORT_RX = '(Client|Server)_Port_\d+'
 
+
+# alignment types for table output
+class Alignment:
+    CENTER = 0
+    LEFT = 1
+    RIGHT = 2
+
+
 def copyDirectory(src, dest):
     try:
         shutil.copytree(src, dest)
@@ -185,6 +193,71 @@ def compile (LDXCMD_BIN, config_dir, compile_dir):
     return obj_dir_api, obj_dir_tde
 
 
+class Table():
+    _rows = list()
+    _separators = list()
+    _column_cnt = 0
+    _column_width = list()
+
+    def __init__(self):
+        self._rows = list()
+        self._separators = list()
+        self._column_cnt = 0
+        self._column_width = list()
+
+    def add_sep(self, count=1):
+        self._separators.append((len(self._rows), count))
+
+    def add_row(self, row=list()):
+        self._rows.append(row)
+        # recalculate the number of columns in table
+        self._column_cnt = max([self._column_cnt, len(row)])
+        # extend the _column_width list to the number of columns
+        for i in range(0, self._column_cnt - len(self._column_width)):
+            self._column_width.append(0)
+        # update _column_width considering the length of elements in row
+        for n in range(len(row)):
+            self._column_width[n] = max([self._column_width[n], len(row[n])])
+
+    def add_header(self, header):
+        self.add_sep(2)
+        self.add_row(header)
+        self.add_sep(2)
+
+    def extend(self, rows=list()):
+        for row in rows:
+            self.add_row(row)
+
+    def get_row_str(self, row, align=Alignment.LEFT):
+        row_str = ' '
+        indent_left = 0
+        indent_right = 0
+        for n in range(self._column_cnt):
+            column_width = self._column_width[n]
+            space_len = column_width - len(row[n])
+            if align == Alignment.LEFT:
+                indent_left = 0
+                indent_right = space_len
+            if align == Alignment.RIGHT:
+                indent_left = space_len
+                indent_right = 0
+            if align == Alignment.CENTER:
+                indent_left = space_len//2
+                indent_right = column_width - len(row[n]) - indent_left
+            row_str += ' ' * indent_left + row[n] + ' ' * indent_right
+        return row_str
+
+    def output(self):
+        if len(self._rows) > 1:
+            border_str = '='*(1 + self._column_cnt + sum(self._column_width))
+            print(border_str)
+            print(self.get_row_str(self._rows[0], Alignment.CENTER))
+            print(border_str)
+            for n in range(1, len(self._rows)-1):
+                print(self.get_row_str(self._rows[n]))
+
+
+
 def comapre_ini(ini_paths):
     configs = list()
     common_prefix_len = len(os.path.commonprefix(ini_paths))
@@ -196,66 +269,54 @@ def comapre_ini(ini_paths):
 
     # build a united structure of all sections in all configs
     conf_structure = dict()
-    output = '                     '
+    result_table = Table()
+    header = list()
+    header.append('')
     for folder_name, conf in configs:
-        output += folder_name + '                      '
+        # compose the header of the result table
+        header.append(folder_name)
         for section in conf.sections():
             if not conf_structure.has_key(section):
                 conf_structure[section] = set()
             conf_structure[section] |= set(conf.options(section))
-    # print (output)
+
+    result_table.add_header(header)
 
     for section in conf_structure:
-        output = str('\t' + section + ': ')
-        values = list()
+        section_values = list()
+        option_values = list()
+        section_values.append(section)
         for folder_name, conf in configs:
             if conf.has_section(section):
-                values.append('OK')
+                section_values.append('+')
             else:
-                values.append(None)
-        print(output, values)
+                section_values.append('-')
         for option in conf_structure[section]:
-            output ='\t\t' + option + ': '
             values = list()
+            values.append('  ' + str(option))
             for folder_name, conf in configs:
                 if conf.has_section(section):
                     if conf.has_option(section, option):
                         values.append(conf.get(section, option))
                     else:
-                        values.append(None)
+                        values.append('-')
                 else:
-                    values.append(None)
-            if len(set(values)) > 1:
-                print(output, values)
+                    values.append('-')
+            if len(set(values)) > 2:
+                option_values.append(values)
+        # add to output: name of the section and its state (present/absent) for each conf
+        if len(set(section_values)) > 2 or len(option_values):
+            result_table.add_row(section_values)
+            if len(option_values):
+                result_table.extend(option_values)
+        result_table.output()
 
-                        # if conf.has_option(section, option):
-        # search and compare all found options in all config files
-    #     for option in all_options:
-    #         option_result = dict()
-    #         values = set()
-    #         folder_result = dict()
-    #         for folder_name, conf in configs:
-    #             result = dict()
-    #             if conf.has_section(section):
-    #                 if conf.has_option(section, option):
-    #                     value = conf.get(section, option)
-    #                     values.add(value)
-    #                     result[option] = value
-    #                 else:
-    #                     values.add(None)
-    #                     result[option] = None
-    #             else:
-    #                 result = None
-    #             folder_result[folder_name] = result
-    #         section_result[section] = folder_result
-    #         if len(values) > 1:
-    #             print()
-    #
-    #         option_result[option] = section_result
-    # print()
+
+                # print()
     # sys.exit(0)
 
-def check_ini(obj_dirs):
+
+def check(obj_dirs):
     # obj_dir_api = obj_dirs[0]
     # obj_dir_tde = obj_dirs[1]
 
@@ -274,11 +335,6 @@ def check_ini(obj_dirs):
     # find common and odd port folders
     if not len(common_ports):
         print('No common ports in ', obj_dirs, file=sys.stderr)
-    # else:
-    #     #print('Common ports found: ', ', '.join(common_ports))
-    #     odd_ports = (ports_api - ports_tde) | (ports_tde - ports_api)
-    #     if len(odd_ports):
-    #         print('Odd ports found: ', ', '.join(odd_ports))
 
     # iterate port folders
     for port in common_ports:
@@ -304,11 +360,6 @@ def check_ini(obj_dirs):
                     ini_dir = os.path.join(obj_dir, port, ini)
                     ini_paths.add(ini_dir)
                 comapre_ini(ini_paths)
-        #     #print('Common ini files found: ', ', '.join(common_ini))
-        #     odd_ini = (ini_api - ini_tde) | (ini_tde - ini_api)
-        #     if len(odd_ini):
-        #         print('Odd ini files found: ', ', '.join(odd_ini))
-
 
 
 #
@@ -330,16 +381,16 @@ def main():
         # convert
         cur_dir = os.path.abspath(os.path.curdir)
         config_dir = os.path.join(cur_dir, 'AutomationConfig', project_name)
-        #convert(LDXCMD_BIN, project_dir, config_dir)
+        # convert(LDXCMD_BIN, project_dir, config_dir)
 
-        # compile to *.ini files
         # obj_dirs = '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP piplining auth and redirect', '/Volumes/public/exchange/dabakumov/temp/api/tde/obj/HTTP piplining auth and redirect'#, '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP pipelinig Apache'
                    # '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP GET 10 files pipelined'
 
+        # compile to *.ini files
         obj_dirs = compile(LDXCMD_BIN, config_dir, cur_dir)
         for obj_dir in obj_dirs:
             print (obj_dir)
-        check_ini(obj_dirs)
+        check(obj_dirs)
 
         print()
 
