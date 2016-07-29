@@ -198,18 +198,22 @@ class Table():
     _separators = list()
     _column_cnt = 0
     _column_width = list()
+    _margin_width = 2
 
     def __init__(self):
         self._rows = list()
         self._separators = list()
         self._column_cnt = 0
         self._column_width = list()
+        self._margin_width = 1
 
-    def add_sep(self, count=1):
-        self._separators.append((len(self._rows), count))
+    def add_sep(self, sep='-'):
+        self._separators.append((len(self._rows), sep))
 
-    def add_row(self, row=list()):
-        self._rows.append(row)
+    def add_row(self, row=list(), align=Alignment.LEFT):
+        data = dict({'data':row, 'options': {'align': align}})
+        options = dict()
+        self._rows.append(data)
         # recalculate the number of columns in table
         self._column_cnt = max([self._column_cnt, len(row)])
         # extend the _column_width list to the number of columns
@@ -220,42 +224,46 @@ class Table():
             self._column_width[n] = max([self._column_width[n], len(row[n])])
 
     def add_header(self, header):
-        self.add_sep(2)
+        self.add_sep('=')
         self.add_row(header)
-        self.add_sep(2)
+        self.add_sep('=')
 
     def extend(self, rows=list()):
         for row in rows:
             self.add_row(row)
 
-    def get_row_str(self, row, align=Alignment.LEFT):
-        row_str = ' '
-        indent_left = 0
-        indent_right = 0
+    def get_row_str(self, row):
+        row_str = ''
+        align = row['options']['align']
+        data = row['data']
         for n in range(self._column_cnt):
             column_width = self._column_width[n]
-            space_len = column_width - len(row[n])
+            space_len = column_width - len(data[n])
+            indent_left = 0
+            indent_right = 0
             if align == Alignment.LEFT:
-                indent_left = 0
-                indent_right = space_len
-            if align == Alignment.RIGHT:
-                indent_left = space_len
-                indent_right = 0
-            if align == Alignment.CENTER:
-                indent_left = space_len//2
-                indent_right = column_width - len(row[n]) - indent_left
-            row_str += ' ' * indent_left + row[n] + ' ' * indent_right
+                indent_right += space_len
+            else:
+                if align == Alignment.RIGHT:
+                    indent_left += space_len
+                else:
+                    if align == Alignment.CENTER:
+                        indent_left += space_len//2
+                        indent_right += column_width - len(data[n]) - indent_left
+            indent_left += self._margin_width
+            indent_right += self._margin_width
+            row_str += ' ' * indent_left + data[n] + ' ' * indent_right + '|'
         return row_str
 
     def output(self):
         if len(self._rows) > 1:
-            border_str = '='*(1 + self._column_cnt + sum(self._column_width))
-            print(border_str)
-            print(self.get_row_str(self._rows[0], Alignment.CENTER))
-            print(border_str)
-            for n in range(1, len(self._rows)-1):
+            for n in range(0, len(self._rows)):
+                if len(self._separators) and self._separators[0][0] == n:
+                    sep_str = self._separators[0][1]
+                    sep_str *= (self._margin_width * 2 * (1 + self._column_cnt) + sum(self._column_width))
+                    print(sep_str)
+                    self._separators.pop(0)
                 print(self.get_row_str(self._rows[n]))
-
 
 
 def comapre_ini(ini_paths):
@@ -309,7 +317,7 @@ def comapre_ini(ini_paths):
             result_table.add_row(section_values)
             if len(option_values):
                 result_table.extend(option_values)
-        result_table.output()
+    result_table.output()
 
 
                 # print()
@@ -317,9 +325,6 @@ def comapre_ini(ini_paths):
 
 
 def check(obj_dirs):
-    # obj_dir_api = obj_dirs[0]
-    # obj_dir_tde = obj_dirs[1]
-
     # build a list of port folders
     common_ports = set()
     for obj_dir in obj_dirs:
@@ -381,7 +386,7 @@ def main():
         # convert
         cur_dir = os.path.abspath(os.path.curdir)
         config_dir = os.path.join(cur_dir, 'AutomationConfig', project_name)
-        # convert(LDXCMD_BIN, project_dir, config_dir)
+        convert(LDXCMD_BIN, project_dir, config_dir)
 
         # obj_dirs = '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP piplining auth and redirect', '/Volumes/public/exchange/dabakumov/temp/api/tde/obj/HTTP piplining auth and redirect'#, '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP pipelinig Apache'
                    # '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP GET 10 files pipelined'
