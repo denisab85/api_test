@@ -163,33 +163,33 @@ def compile (LDXCMD_BIN, config_dir, compile_dir):
     # compile using python swifttest API
     project_name = os.path.split(config_dir)[-1]
     obj_dir_api = os.path.join(compile_dir, 'py', 'obj', project_name)
-    if not os.path.exists(obj_dir_api):
-        os.makedirs(obj_dir_api)
-    config_xml = os.path.join(config_dir, 'AutomationConfig.xml')
-    project = swifttest.Project(project_name, config_xml)
-    logger = swifttest.Logger()
-    if not project.compile(obj_dir_api, True, logger):
-        for msg in logger.each_error():
-            if msg:
-                print('An error occurred during compilation: ' + msg.text, file=sys.stderr)
+    # if not os.path.exists(obj_dir_api):
+    #     os.makedirs(obj_dir_api)
+    # config_xml = os.path.join(config_dir, 'AutomationConfig.xml')
+    # project = swifttest.Project(project_name, config_xml)
+    # logger = swifttest.Logger()
+    # if not project.compile(obj_dir_api, True, logger):
+    #     for msg in logger.each_error():
+    #         if msg:
+    #             print('An error occurred during compilation: ' + msg.text, file=sys.stderr)
 
     # compile using LdxCmd
     obj_dir_tde = os.path.join(compile_dir, 'tde', 'obj', project_name)
-    p = subprocess.Popen([LDXCMD_BIN, '--compile', '--config:' + config_xml],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, err = p.communicate()
-    if p.returncode:
-        print(output)
-        raise Exception('An error occurred during compilation.')
-    else:
-        if os.path.exists(obj_dir_tde):
-            shutil.rmtree(obj_dir_tde)
-        copyDirectory(os.path.join(config_dir, 'Automation', 'obj'), obj_dir_tde)
-        # rename port folders using underscores instead of spaces
-        for f in os.listdir(obj_dir_tde):
-            if os.path.isdir(os.path.join(obj_dir_tde, f)) and re.match('(Client|Server)\sPort\s\d+', f):
-                new_f = f.replace(' ', '_')
-                os.rename(os.path.join(obj_dir_tde, f), os.path.join(obj_dir_tde, new_f))
+    # p = subprocess.Popen([LDXCMD_BIN, '--compile', '--config:' + config_xml],
+    #                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # output, err = p.communicate()
+    # if p.returncode:
+    #     print(output)
+    #     raise Exception('An error occurred during compilation.')
+    # else:
+    #     if os.path.exists(obj_dir_tde):
+    #         shutil.rmtree(obj_dir_tde)
+    #     copyDirectory(os.path.join(config_dir, 'Automation', 'obj'), obj_dir_tde)
+    #     # rename port folders using underscores instead of spaces
+    #     for f in os.listdir(obj_dir_tde):
+    #         if os.path.isdir(os.path.join(obj_dir_tde, f)) and re.match('(Client|Server)\sPort\s\d+', f):
+    #             new_f = f.replace(' ', '_')
+    #             os.rename(os.path.join(obj_dir_tde, f), os.path.join(obj_dir_tde, new_f))
     return obj_dir_api, obj_dir_tde
 
 
@@ -225,7 +225,7 @@ class Table():
 
     def add_header(self, header):
         self.add_sep('=')
-        self.add_row(header)
+        self.add_row(header, Alignment.CENTER)
         self.add_sep('=')
 
     def extend(self, rows=list()):
@@ -241,7 +241,7 @@ class Table():
             space_len = column_width - len(data[n])
             indent_left = 0
             indent_right = 0
-            if align == Alignment.LEFT:
+            if align == Alignment.LEFT or n == 0:
                 indent_right += space_len
             else:
                 if align == Alignment.RIGHT:
@@ -258,22 +258,39 @@ class Table():
     def output(self):
         if len(self._rows) > 1:
             for n in range(0, len(self._rows)):
+                # if a separator has been inserted in the position of n
                 if len(self._separators) and self._separators[0][0] == n:
+                    # print a separator line
                     sep_str = self._separators[0][1]
-                    sep_str *= (self._margin_width * 2 * (1 + self._column_cnt) + sum(self._column_width))
+                    sep_str *= (self._margin_width * 2 * (1 + self._column_cnt) + sum(self._column_width) + 1)
                     print(sep_str)
                     self._separators.pop(0)
                 print(self.get_row_str(self._rows[n]))
 
 
-def comapre_ini(ini_paths):
+def is_exception(ini_name, section, option):
+    result = False
+    #if re.match(section
+    return result
+
+
+def compare_ini(ini_dirs, ini_name):
     configs = list()
-    common_prefix_len = len(os.path.commonprefix(ini_paths))
+    common_prefix_len = len(os.path.commonprefix(ini_dirs))
     # iterate all ini files and make a list of (folder_name, ConfigParser) items
-    for ini_path in ini_paths:
-        folder_name = ini_path[common_prefix_len:].split(os.sep)[0]
+    for ini_dir in ini_dirs:
+        # extract the first unique item of the path to use as an identifier of ini files set
+        folder_name = ini_dir[common_prefix_len:].split(os.sep)[0]
         configs.append((folder_name, ConfigParser.RawConfigParser()))
-        configs[-1][1].read(ini_path)
+        configs[-1][1].read(os.path.join(ini_dir, ini_name))
+
+    # initialize exceptions from the corresponding exceptions *.ini
+    exceptions = ConfigParser.RawConfigParser()
+    file_name, file_ext = os.path.splitext(ini_name)
+    exception_ini = file_name.strip('1234567890') + file_ext
+    exception_ini = os.path.join('exceptions', exception_ini)
+    if os.path.exists(exception_ini):
+        exceptions.read(exception_ini)
 
     # build a united structure of all sections in all configs
     conf_structure = dict()
@@ -300,6 +317,8 @@ def comapre_ini(ini_paths):
             else:
                 section_values.append('-')
         for option in conf_structure[section]:
+            if is_exception(ini_name, section, option):
+                continue
             values = list()
             values.append('  ' + str(option))
             for folder_name, conf in configs:
@@ -314,14 +333,10 @@ def comapre_ini(ini_paths):
                 option_values.append(values)
         # add to output: name of the section and its state (present/absent) for each conf
         if len(set(section_values)) > 2 or len(option_values):
-            result_table.add_row(section_values)
+            result_table.add_row(section_values, Alignment.CENTER)
             if len(option_values):
                 result_table.extend(option_values)
     result_table.output()
-
-
-                # print()
-    # sys.exit(0)
 
 
 def check(obj_dirs):
@@ -348,23 +363,23 @@ def check(obj_dirs):
             port_dir = os.path.join(obj_dir, port)
 
             # find common ini files
-            ini = set([i for i in os.listdir(port_dir) if (re.match('[\w\.]+\.ini$', i))])
+            ini_name = set([i for i in os.listdir(port_dir) if (re.match('[\w\.]+\.ini$', i))])
             if not len(common_ini):
-                common_ini = ini
+                common_ini = ini_name
             else:
-                common_ini = common_ini & ini
+                common_ini = common_ini & ini_name
 
         if not len(common_ini):
             print('Check: no common ini files', file=sys.stderr)
         else:
             print('\nComparing port: ', port)
-            for ini in common_ini:
-                print ('\n' + ini)
-                ini_paths = set()
+            for ini_name in common_ini:
+                print ('\n' + ini_name)
+                ini_dirs = set()
                 for obj_dir in obj_dirs:
-                    ini_dir = os.path.join(obj_dir, port, ini)
-                    ini_paths.add(ini_dir)
-                comapre_ini(ini_paths)
+                    ini_dir = os.path.join(obj_dir, port)
+                    ini_dirs.add(ini_dir)
+                compare_ini(ini_dirs, ini_name)
 
 
 #
@@ -386,7 +401,7 @@ def main():
         # convert
         cur_dir = os.path.abspath(os.path.curdir)
         config_dir = os.path.join(cur_dir, 'AutomationConfig', project_name)
-        convert(LDXCMD_BIN, project_dir, config_dir)
+        # convert(LDXCMD_BIN, project_dir, config_dir)
 
         # obj_dirs = '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP piplining auth and redirect', '/Volumes/public/exchange/dabakumov/temp/api/tde/obj/HTTP piplining auth and redirect'#, '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP pipelinig Apache'
                    # '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP GET 10 files pipelined'
