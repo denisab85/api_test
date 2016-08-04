@@ -193,55 +193,99 @@ def compile (LDXCMD_BIN, config_dir, compile_dir):
     return obj_dir_api, obj_dir_tde
 
 
-class Table():
+Colors = dict({
+    'Red': '\033[91m',
+    'Green': '\033[92m',
+    'Blue': '\033[94m',
+    'Cyan': '\033[96m',
+    'White': '\033[97m',
+    'Yellow': '\033[93m',
+    'Magenta': '\033[95m',
+    'Grey': '\033[90m',
+    'Black': '\033[90m',
+    'Default': '\033[99m',
+    'ENDC': '\033[0m',
+    'BOLD': '\033[1m',
+    'UNDERLINE': '\033[4m'
+})
+
+
+class Row:
+    data = list()
+    align = Alignment.LEFT
+    font = 'Default'
+
+    def __init__(self, data=list(), align=Alignment.LEFT, font='Default'):
+        self.data = data
+        self.align = align
+        self.font = font
+
+    def column_cnt(self):
+        return len(self.data)
+
+    def add_col(self, text=''):
+        self.data.append(text)
+
+    def extend_to(self, col_num=1):
+        for i in range(col_num - self.column_cnt()):
+            self.add_col()
+
+
+class Table:
     _rows = list()
     _separators = list()
     _column_cnt = 0
     _column_width = list()
     _margin_width = 2
+    _caption = ''
+    _totals = list()
 
-    def __init__(self):
+    def __init__(self, caption=''):
         self._rows = list()
         self._separators = list()
         self._column_cnt = 0
         self._column_width = list()
         self._margin_width = 1
+        self._caption = caption
+        self._totals = list()
 
     def add_sep(self, sep='-'):
         self._separators.append((len(self._rows), sep))
 
-    def add_row(self, row=list(), align=Alignment.LEFT):
-        data = dict({'data':row, 'options': {'align': align}})
-        options = dict()
-        self._rows.append(data)
+    def add_row(self, row):
+        row.extend_to(self._column_cnt)
+        self._rows.append(row)
         # recalculate the number of columns in table
-        self._column_cnt = max([self._column_cnt, len(row)])
+        self._column_cnt = max([self._column_cnt, row.column_cnt()])
         # extend the _column_width list to the number of columns
         for i in range(0, self._column_cnt - len(self._column_width)):
             self._column_width.append(0)
         # update _column_width considering the length of elements in row
-        for n in range(len(row)):
-            self._column_width[n] = max([self._column_width[n], len(row[n])])
+        for n in range(row.column_cnt()):
+            self._column_width[n] = max([self._column_width[n], len(row.data[n])])
 
     def add_header(self, header):
         self.add_sep('=')
-        self.add_row(header, Alignment.CENTER)
+        self.add_row(Row(header, align=Alignment.CENTER))
         self.add_sep('=')
 
-    def extend(self, rows=list()):
-        for row in rows:
-            self.add_row(row)
+    def add_total(self, name, value):
+        data = [name, str(value)]
+        for i in range(self._column_cnt-2):
+            data.insert(1, '')
+        self._totals.append(Row(data, align=Alignment.RIGHT, font='BOLD'))
 
-    def get_row_str(self, row):
-        row_str = ''
-        align = row['options']['align']
-        data = row['data']
+    def get_row_str(self, row, total=False):
+        align = row.align
+        font = Colors.get(row.font)
+        data = row.data
+        row_str = font
         for n in range(self._column_cnt):
             column_width = self._column_width[n]
             space_len = column_width - len(data[n])
             indent_left = 0
             indent_right = 0
-            if align == Alignment.LEFT or n == 0:
+            if align == Alignment.LEFT or (n == 0 and not total):
                 indent_right += space_len
             else:
                 if align == Alignment.RIGHT:
@@ -253,28 +297,39 @@ class Table():
             indent_left += self._margin_width
             indent_right += self._margin_width
             row_str += ' ' * indent_left + data[n] + ' ' * indent_right + '|'
+        row_str += Colors.get('ENDC')
         return row_str
 
+    def get_width(self):
+        result = self._margin_width * 2 * (1 + self._column_cnt) + sum(self._column_width) + 1
+        return result
+
     def output(self):
+        print('_' * max(len(self._caption), self.get_width()))
+        print(self._caption)
         if len(self._rows) > 1:
-            for n in range(0, len(self._rows)):
+            for n in range(0, len(self._rows)+1):
                 # if a separator has been inserted in the position of n
                 if len(self._separators) and self._separators[0][0] == n:
                     # print a separator line
                     sep_str = self._separators[0][1]
-                    sep_str *= (self._margin_width * 2 * (1 + self._column_cnt) + sum(self._column_width) + 1)
+                    sep_str *= (self.get_width())
                     print(sep_str)
                     self._separators.pop(0)
-                print(self.get_row_str(self._rows[n]))
-
-
-def is_exception(ini_name, section, option):
-    result = False
-    #if re.match(section
-    return result
+                if n < len(self._rows):
+                    print(self.get_row_str(self._rows[n]))
+            for t in self._totals:
+                print(self.get_row_str(t, True))
+        else:
+            print('< nothing to output >')
 
 
 def compare_ini(ini_dirs, ini_name):
+    # initializing statistic counters
+    ignored_cnt = 0
+    default_cnt = 0
+    unequal_cnt = 0
+    # list of configuration INI readers
     configs = list()
     common_prefix_len = len(os.path.commonprefix(ini_dirs))
     # iterate all ini files and make a list of (folder_name, ConfigParser) items
@@ -294,7 +349,7 @@ def compare_ini(ini_dirs, ini_name):
 
     # build a united structure of all sections in all configs
     conf_structure = dict()
-    result_table = Table()
+    result_table = Table(ini_name)
     header = list()
     header.append('')
     for folder_name, conf in configs:
@@ -304,10 +359,11 @@ def compare_ini(ini_dirs, ini_name):
             if not conf_structure.has_key(section):
                 conf_structure[section] = set()
             conf_structure[section] |= set(conf.options(section))
-
+    header.append('status')
     result_table.add_header(header)
 
     for section in conf_structure:
+        section_exc = section.strip('1234567890')
         section_values = list()
         option_values = list()
         section_values.append(section)
@@ -317,8 +373,12 @@ def compare_ini(ini_dirs, ini_name):
             else:
                 section_values.append('-')
         for option in conf_structure[section]:
-            if is_exception(ini_name, section, option):
-                continue
+            option_exc = option.strip('1234567890')
+            value_exc = 'unequal'
+            # if current option is marked 'ignore' in exceptions list - don't check it
+            if exceptions.has_section(section_exc):
+                if exceptions.has_option(section_exc, option_exc):
+                    value_exc = exceptions.get(section_exc, option_exc)
             values = list()
             values.append('  ' + str(option))
             for folder_name, conf in configs:
@@ -329,14 +389,40 @@ def compare_ini(ini_dirs, ini_name):
                         values.append('-')
                 else:
                     values.append('-')
+            # if at least 2 different values are found - add a row to the table
             if len(set(values)) > 2:
+                values.append(value_exc)
                 option_values.append(values)
+            # else:
+            #     equal_cnt += 1
         # add to output: name of the section and its state (present/absent) for each conf
         if len(set(section_values)) > 2 or len(option_values):
-            result_table.add_row(section_values, Alignment.CENTER)
-            if len(option_values):
-                result_table.extend(option_values)
+            result_table.add_row(Row(section_values, align=Alignment.CENTER))
+            ignored_cnt = 0
+            default_cnt = 0
+            unequal_cnt = 0
+            for ov in option_values:
+                value_exc = ov[-1]
+                color = 'Default'
+                if value_exc == 'unequal':
+                    color = 'Red'
+                    unequal_cnt += 1
+                else:
+                    if value_exc == 'ignore':
+                        color = 'Grey'
+                        ignored_cnt += 1
+                    else:
+                        if value_exc == 'default':
+                            color = 'Blue'
+                            default_cnt += 1
+                result_table.add_row(Row(ov, font=color))
+    result_table.add_sep()
+    if ignored_cnt or default_cnt or unequal_cnt:
+        result_table.add_total('Ignored:', ignored_cnt)
+        result_table.add_total('Default:', default_cnt)
+        result_table.add_total('Unequal:', unequal_cnt)
     result_table.output()
+    return bool(unequal_cnt)
 
 
 def check(obj_dirs):
@@ -374,7 +460,7 @@ def check(obj_dirs):
         else:
             print('\nComparing port: ', port)
             for ini_name in common_ini:
-                print ('\n' + ini_name)
+                print ('')
                 ini_dirs = set()
                 for obj_dir in obj_dirs:
                     ini_dir = os.path.join(obj_dir, port)
