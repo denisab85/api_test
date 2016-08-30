@@ -361,7 +361,9 @@ def compare_ini(ini_dirs, ini_name):
             conf_structure[section] |= set(conf.options(section))
     header.append('status')
     result_table.add_header(header)
-
+    ignored_cnt = 0
+    default_cnt = 0
+    unequal_cnt = 0
     for section in conf_structure:
         section_exc = section.strip('1234567890')
         section_values = list()
@@ -398,9 +400,6 @@ def compare_ini(ini_dirs, ini_name):
         # add to output: name of the section and its state (present/absent) for each conf
         if len(set(section_values)) > 2 or len(option_values):
             result_table.add_row(Row(section_values, align=Alignment.CENTER))
-            ignored_cnt = 0
-            default_cnt = 0
-            unequal_cnt = 0
             for ov in option_values:
                 value_exc = ov[-1]
                 color = 'Default'
