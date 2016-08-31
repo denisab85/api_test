@@ -163,33 +163,33 @@ def compile (LDXCMD_BIN, config_dir, compile_dir):
     # compile using python swifttest API
     project_name = os.path.split(config_dir)[-1]
     obj_dir_api = os.path.join(compile_dir, 'py', 'obj', project_name)
-    # if not os.path.exists(obj_dir_api):
-    #     os.makedirs(obj_dir_api)
-    # config_xml = os.path.join(config_dir, 'AutomationConfig.xml')
-    # project = swifttest.Project(project_name, config_xml)
-    # logger = swifttest.Logger()
-    # if not project.compile(obj_dir_api, True, logger):
-    #     for msg in logger.each_error():
-    #         if msg:
-    #             print('An error occurred during compilation: ' + msg.text, file=sys.stderr)
+    if not os.path.exists(obj_dir_api):
+        os.makedirs(obj_dir_api)
+    config_xml = os.path.join(config_dir, 'AutomationConfig.xml')
+    project = swifttest.Project(project_name, config_xml)
+    logger = swifttest.Logger()
+    if not project.compile(obj_dir_api, True, logger):
+        for msg in logger.each_error():
+            if msg:
+                print('An error occurred during compilation: ' + msg.text, file=sys.stderr)
 
     # compile using LdxCmd
     obj_dir_tde = os.path.join(compile_dir, 'tde', 'obj', project_name)
-    # p = subprocess.Popen([LDXCMD_BIN, '--compile', '--config:' + config_xml],
-    #                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # output, err = p.communicate()
-    # if p.returncode:
-    #     print(output)
-    #     raise Exception('An error occurred during compilation.')
-    # else:
-    #     if os.path.exists(obj_dir_tde):
-    #         shutil.rmtree(obj_dir_tde)
-    #     copyDirectory(os.path.join(config_dir, 'Automation', 'obj'), obj_dir_tde)
-    #     # rename port folders using underscores instead of spaces
-    #     for f in os.listdir(obj_dir_tde):
-    #         if os.path.isdir(os.path.join(obj_dir_tde, f)) and re.match('(Client|Server)\sPort\s\d+', f):
-    #             new_f = f.replace(' ', '_')
-    #             os.rename(os.path.join(obj_dir_tde, f), os.path.join(obj_dir_tde, new_f))
+    p = subprocess.Popen([LDXCMD_BIN, '--compile', '--config:' + config_xml],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, err = p.communicate()
+    if p.returncode:
+        print(output)
+        raise Exception('An error occurred during compilation.')
+    else:
+        if os.path.exists(obj_dir_tde):
+            shutil.rmtree(obj_dir_tde)
+        copyDirectory(os.path.join(config_dir, 'Automation', 'obj'), obj_dir_tde)
+        # rename port folders using underscores instead of spaces
+        for f in os.listdir(obj_dir_tde):
+            if os.path.isdir(os.path.join(obj_dir_tde, f)) and re.match('(Client|Server)\sPort\s\d+', f):
+                new_f = f.replace(' ', '_')
+                os.rename(os.path.join(obj_dir_tde, f), os.path.join(obj_dir_tde, new_f))
     return obj_dir_api, obj_dir_tde
 
 
@@ -262,7 +262,7 @@ class Table:
             self._column_width.append(0)
         # update _column_width considering the length of elements in row
         for n in range(row.column_cnt()):
-            self._column_width[n] = max([self._column_width[n], len(row.data[n])])
+            self._column_width[n] = max([self._column_width[n], len(str(row.data[n]))])
 
     def add_header(self, header):
         self.add_sep('=')
@@ -282,7 +282,7 @@ class Table:
         row_str = font
         for n in range(self._column_cnt):
             column_width = self._column_width[n]
-            space_len = column_width - len(data[n])
+            space_len = column_width - len(str(data[n]))
             indent_left = 0
             indent_right = 0
             if align == Alignment.LEFT or (n == 0 and not total):
@@ -293,10 +293,10 @@ class Table:
                 else:
                     if align == Alignment.CENTER:
                         indent_left += space_len//2
-                        indent_right += column_width - len(data[n]) - indent_left
+                        indent_right += column_width - len(str(data[n])) - indent_left
             indent_left += self._margin_width
             indent_right += self._margin_width
-            row_str += ' ' * indent_left + data[n] + ' ' * indent_right + '|'
+            row_str += ' ' * indent_left + str(data[n]) + ' ' * indent_right + '|'
         row_str += Colors.get('ENDC')
         return row_str
 
@@ -325,10 +325,6 @@ class Table:
 
 
 def compare_ini(ini_dirs, ini_name):
-    # initializing statistic counters
-    ignored_cnt = 0
-    default_cnt = 0
-    unequal_cnt = 0
     # list of configuration INI readers
     configs = list()
     common_prefix_len = len(os.path.commonprefix(ini_dirs))
@@ -361,6 +357,7 @@ def compare_ini(ini_dirs, ini_name):
             conf_structure[section] |= set(conf.options(section))
     header.append('status')
     result_table.add_header(header)
+    # initializing statistic counters
     ignored_cnt = 0
     default_cnt = 0
     unequal_cnt = 0
@@ -425,6 +422,7 @@ def compare_ini(ini_dirs, ini_name):
 
 
 def check(obj_dirs):
+    result = list()
     # build a list of port folders
     common_ports = set()
     for obj_dir in obj_dirs:
@@ -459,12 +457,14 @@ def check(obj_dirs):
         else:
             print('\nComparing port: ', port)
             for ini_name in common_ini:
-                print ('')
+                print()
                 ini_dirs = set()
                 for obj_dir in obj_dirs:
                     ini_dir = os.path.join(obj_dir, port)
                     ini_dirs.add(ini_dir)
-                compare_ini(ini_dirs, ini_name)
+                if compare_ini(ini_dirs, ini_name):
+                    result.append(ini_name)
+    return len(result)
 
 
 #
@@ -477,16 +477,18 @@ def main():
     args = parser.parse_args()
     path_list = dig_tests(args.test_path)
     LDXCMD_BIN = find_ldxcmd()
+    result_table = Table('Total results')
+    result_table.add_header(['Project', 'Files failed'])
 
-    # Convert TDE projects to AutomationConfig
+    projects_failed = 0
     for project_dir in path_list:
         project_name = os.path.split(project_dir)[-1]
         print(project_name)
 
-        # convert
+        # Convert TDE projects to AutomationConfig
         cur_dir = os.path.abspath(os.path.curdir)
         config_dir = os.path.join(cur_dir, 'AutomationConfig', project_name)
-        # convert(LDXCMD_BIN, project_dir, config_dir)
+        convert(LDXCMD_BIN, project_dir, config_dir)
 
         # obj_dirs = '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP piplining auth and redirect', '/Volumes/public/exchange/dabakumov/temp/api/tde/obj/HTTP piplining auth and redirect'#, '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP pipelinig Apache'
                    # '/Volumes/public/exchange/dabakumov/temp/api/py/obj/HTTP GET 10 files pipelined'
@@ -495,9 +497,15 @@ def main():
         obj_dirs = compile(LDXCMD_BIN, config_dir, cur_dir)
         for obj_dir in obj_dirs:
             print (obj_dir)
-        check(obj_dirs)
+        files_failed = check(obj_dirs)
 
+        result_table.add_row(Row([project_name, files_failed], align=Alignment.RIGHT))
+        projects_failed += int(bool(files_failed))
         print()
+    result_table.add_sep()
+    result_table.add_total('Projects failed:', projects_failed)
+    result_table.output()
+    sys.exit(projects_failed)
 
 if __name__ == '__main__':
     main()
