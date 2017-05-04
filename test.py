@@ -1,6 +1,23 @@
+#! /usr/bin/python
+
 """
-This test utilizes LdxCmd and Python swifttest.py module to compile a set of TDE projects into *.ini files for
-further comparison. It was developed to perform the correctness of the API.
+This test checks the way TDE and API compile Ldx projects into INI files.
+It utilizes LdxCmd and Python swifttest.py module to compile projects into *.ini files.
+A path to Ldx projects should be given as the only input parameter to the script.
+Every subfolder in the input folder will be recursively checked for containing an Ldx project.
+Then every project found will be converted to AutomationConfig which in its turn will be
+compiled to ini using LdxCmd and Python API. The result of each of the two compilations will
+be placed into the corresponding folder (tde or py) for further comparison.
+The comparison is being done using the Python's ConfigParser module.
+For each ini file a table is generated listing all values unequal between py and tde.
+These unequal values fall into 3 categories:
+  -- default: value may not be present in the ini, in which case it will be dafaulted by
+              the backend.
+  -- ignore:  technically, this value can not be equal (e.g., timestamp or GUID) but this
+              has no impact on test execution.
+  -- unequal: all the rest of unequal values are marked in red and should be evaluated.
+              These may reveal possible mismatch between TDE and API code.
+The ./exceptions folder contains files with their ignored or default values.
 """
 
 from __future__ import print_function
@@ -473,7 +490,7 @@ def check(obj_dirs):
 def main():
     # build a set of test paths from the command line argument pointing to the root folder
     parser = argparse.ArgumentParser()
-    parser.add_argument('test_path', help='path to tests', type=str)
+    parser.add_argument('test_path', help='path to folder containing TDE projects', type=str)
     args = parser.parse_args()
     path_list = dig_tests(args.test_path)
     LDXCMD_BIN = find_ldxcmd()
